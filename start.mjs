@@ -13,6 +13,7 @@ import { resolve } from 'node:path';
 
 const usage = () => {
   console.error('Usage:');
+  console.error('  npm start                 # pick a target in the browser');
   console.error('  npm start -- https://gitlab.com/group/repo/-/merge_requests/123');
   console.error('  npm start -- https://github.com/owner/repo/pull/123');
   console.error('  npm start -- https://github.com/owner/repo/compare/main...feature');
@@ -37,7 +38,9 @@ for (let i = 0; i < args.length; i++) {
 const env = { ...process.env };
 const target = flags.repo ?? positional.shift();
 
-if (target && /^https?:\/\//.test(target)) {
+if (!target) {
+  // No target: open the start screen and pick one in the browser.
+} else if (/^https?:\/\//.test(target)) {
   if (/\/-\/merge_requests\/\d+/.test(target)) {
     env.MR_URL = target;
   } else if (/\/pull\/\d+/.test(target) || /\/compare\//.test(target)) {
@@ -45,7 +48,7 @@ if (target && /^https?:\/\//.test(target)) {
   } else {
     usage();
   }
-} else if (target) {
+} else {
   const repoPath = resolve(target);
   if (!existsSync(repoPath)) {
     console.error(`No such directory: ${repoPath}`);
@@ -59,8 +62,6 @@ if (target && /^https?:\/\//.test(target)) {
   }
   if (flags.base) env.GIT_BASE = flags.base;
   if (flags.head) env.GIT_HEAD = flags.head;
-} else {
-  usage();
 }
 
 const child = spawn('npx', ['vite', '--open'], { stdio: 'inherit', env });

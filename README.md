@@ -18,6 +18,9 @@ prompt from your comments.
 ```sh
 npm install   # first time only
 
+# Start screen: pick a URL, local repo + branches, or a recent review in the browser
+npm start
+
 # GitLab MR mode
 npm start -- https://gitlab.com/group/repo/-/merge_requests/123
 
@@ -36,7 +39,14 @@ npm start -- /path/to/repo --base master --head my-branch
 npm start -- /path/to/repo
 ```
 
-The browser opens automatically. Then:
+The browser opens automatically. With no arguments you land on a start screen
+where you can paste a URL, point at a local repo (typed path or native folder
+picker, with branch pickers), or reopen one of the last 15 reviews; the `←`
+button in the review toolbar takes you back to it. Then:
+
+- **File tree** highlights the file currently at the top of the viewport and
+  scrolls to keep it visible; file headers stay pinned while their diff is on
+  screen.
 
 - **File tree** (left) — click a file to jump to it; badges show comment counts.
 - **Unified / Split** toggle in the toolbar.
@@ -72,11 +82,15 @@ an old prompt.
 
 ## How it works
 
-- `start.mjs` passes the review target to the Vite dev server via env vars
-  (`MR_URL`, `GITHUB_URL`, or `REPO_PATH` + `GIT_BASE`/`GIT_HEAD`/`GIT_RANGE`).
-- A Vite plugin (`vite.config.ts`) picks a provider — `server/glab.ts` (glab
-  CLI), `server/github.ts` (gh CLI), or `server/localGit.ts` (git CLI) — and
-  serves `/api/mr` (metadata + diffs parsed by `server/diff.ts`), `/api/file`
-  (full file content for context expansion), and `/api/state` (persistence).
+- `start.mjs` optionally passes a boot target to the Vite dev server via env
+  vars (`MR_URL`, `GITHUB_URL`, or `REPO_PATH` + `GIT_BASE`/`GIT_HEAD`/`GIT_RANGE`);
+  with no target the UI opens on the start screen.
+- A Vite plugin (`vite.config.ts`) resolves each requested target to a
+  provider — `server/glab.ts` (glab CLI), `server/github.ts` (gh CLI), or
+  `server/localGit.ts` (git CLI) — and serves `/api/mr` (metadata + diffs
+  parsed by `server/diff.ts`), `/api/file` (full file content for context
+  expansion), `/api/state` (persistence), `/api/repo-info` (branch listing for
+  the start screen), and `/api/history` (recent reviews, stored in
+  `~/.codereview-commenter/history.json`).
 - The React frontend highlights hunks with Shiki (`github-light`/`github-dark`,
   following `prefers-color-scheme`) and renders unified or split views.

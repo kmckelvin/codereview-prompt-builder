@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchMR, fetchState, saveState } from './api';
+import { fetchBoot, fetchMR, fetchState, saveState, setApiTarget } from './api';
 import { DiffViewer } from './components/DiffViewer';
 import { FileTree } from './components/FileTree';
 import { ImportDialog } from './components/ImportDialog';
+import { StartScreen } from './components/StartScreen';
 import { Toolbar } from './components/Toolbar';
 import { newCommentId } from './promptFormat';
 import type { Draft, ViewMode } from './store';
 import { ReviewProvider, type ReviewStore } from './store';
-import type { MRData, ReviewComment, Selection } from './types';
+import type { MRData, ReviewComment, Selection, Target } from './types';
 
 function useDarkMode(): boolean {
   const [dark, setDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -21,6 +22,45 @@ function useDarkMode(): boolean {
 }
 
 export function App() {
+  const [target, setTarget] = useState<Target | null>(null);
+  const [booted, setBooted] = useState(false);
+
+  useEffect(() => {
+    // A CLI-supplied target boots straight into the review, but only until
+    // the user navigates back to the start screen.
+    if (sessionStorage.getItem('skip-boot-target')) {
+      setBooted(true);
+      return;
+    }
+    fetchBoot().then(
+      (b) => {
+        if (b.target) setTarget(b.target);
+        setBooted(true);
+      },
+      () => setBooted(true),
+    );
+  }, []);
+
+  if (!booted) {
+    return <div className="fullscreen-message"><p className="loading">Loading…</p></div>;
+  }
+  if (!target) {
+    return <StartScreen onOpen={setTarget} />;
+  }
+  return (
+    <ReviewView
+      key={JSON.stringify(target)}
+      target={target}
+      onBack={() => {
+        sessionStorage.setItem('skip-boot-target', '1');
+        setTarget(null);
+      }}
+    />
+  );
+}
+
+function ReviewView({ target, onBack }: { target: Target; onBack: () => void }) {
+  setApiTarget(target);
   const [mr, setMR] = useState<MRData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [comments, setComments] = useState<ReviewComment[]>([]);
@@ -30,6 +70,7 @@ export function App() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('unified');
   const [importOpen, setImportOpen] = useState(false);
+  const [activeFile, setActiveFile] = useState<string | null>(null);
   const dark = useDarkMode();
 
   useEffect(() => {
@@ -83,13 +124,18 @@ export function App() {
   if (error) {
     return (
       <div className="fullscreen-message">
-        <h1>Couldn&rsquo;t load merge request</h1>
+        <h1>Couldn&rsquo;t load review</h1>
         <pre>{error}</pre>
+        <p>
+          <button className="btn" onClick={onBack}>
+            ← Back
+          </button>
+        </p>
       </div>
     );
   }
   if (!mr) {
-    return <div className="fullscreen-message"><p className="loading">Fetching merge request…</p></div>;
+    return <div className="fullscreen-message"><p className="loading">Fetching diff…</p></div>;
   }
 
   return (
@@ -106,10 +152,11 @@ export function App() {
             setDraft(null);
             setSelection(null);
           }}
+          onBack={onBack}
         />
         <div className="app-body">
-          <FileTree files={mr.files} comments={comments} />
-          <DiffViewer files={mr.files} />
+          <FileTree files={mr.files} comments={comments} activeFile={activeFile} />
+          <DiffViewer files={mr.files} onActiveFile={setActiveFile} />
         </div>
         {importOpen && (
           <ImportDialog

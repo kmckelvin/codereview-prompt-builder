@@ -41,6 +41,25 @@ export interface MRData {
   files: DiffFile[];
 }
 
+export type Target =
+  | { kind: 'gitlab'; url: string }
+  | { kind: 'github'; url: string }
+  | { kind: 'local'; repoPath: string; base?: string; head?: string; range?: string };
+
+export interface HistoryEntry {
+  target: Target;
+  title: string;
+  subtitle: string;
+  openedAt: number;
+}
+
+export interface RepoInfo {
+  repoPath: string;
+  branches: string[];
+  currentBranch: string;
+  defaultBranch: string;
+}
+
 export type Side = 'old' | 'new';
 
 export interface ReviewComment {

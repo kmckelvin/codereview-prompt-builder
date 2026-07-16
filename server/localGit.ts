@@ -36,6 +36,30 @@ async function defaultBranch(repoPath: string): Promise<string> {
   throw new Error('Could not determine the default branch; pass --base explicitly.');
 }
 
+export interface RepoInfo {
+  repoPath: string;
+  branches: string[];
+  currentBranch: string;
+  defaultBranch: string;
+}
+
+/** Branch listing for the start screen's local-repo picker. */
+export async function repoInfo(repoPath: string): Promise<RepoInfo> {
+  await git(repoPath, ['rev-parse', '--git-dir']); // fails fast if not a git repo
+  const branches = (await git(repoPath, ['for-each-ref', 'refs/heads', '--format=%(refname:short)']))
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+  const currentBranch = (await git(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+  let def: string;
+  try {
+    def = await defaultBranch(repoPath);
+  } catch {
+    def = branches[0] ?? '';
+  }
+  return { repoPath, branches, currentBranch, defaultBranch: def };
+}
+
 export async function resolveLocalRef(
   repoPath: string,
   baseArg: string,

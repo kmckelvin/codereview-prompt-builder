@@ -1,12 +1,20 @@
 import react from '@vitejs/plugin-react';
-import { basename } from 'node:path';
+import { homedir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import type { Connect, Plugin } from 'vite';
 import { defineConfig } from 'vite';
+import { pickDirectory } from './server/dialog';
 import { parseUnifiedDiff } from './server/diff';
 import { fetchGitHubData, fetchGitHubFile, parseGitHubUrl } from './server/github';
 import { fetchMRDiffs, fetchMRInfo, fetchRawFile, parseMRUrl, type MRInfo, type RawDiff } from './server/glab';
-import { fetchLocalDiffs, fetchLocalFile, resolveLocalRef } from './server/localGit';
+import { loadHistory, recordHistory } from './server/history';
+import { fetchLocalDiffs, fetchLocalFile, repoInfo, resolveLocalRef } from './server/localGit';
 import { loadState, saveState } from './server/persist';
+
+export type Target =
+  | { kind: 'gitlab'; url: string }
+  | { kind: 'github'; url: string }
+  | { kind: 'local'; repoPath: string; base?: string; head?: string; range?: string };
 
 interface Provider {
   load(): Promise<{ info: MRInfo; files: unknown[] }>;
@@ -24,6 +32,7 @@ function toFiles(rawDiffs: RawDiff[]) {
 }
 
 const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9._-]/g, '_');
+const expandHome = (p: string) => (p.startsWith('~/') || p === '~' ? join(homedir(), p.slice(1)) : p);
 
 function mrProvider(mrUrl: string): Provider {
   const ref = parseMRUrl(mrUrl);
@@ -94,6 +103,39 @@ function localProvider(repoPath: string, base: string, head: string, range: stri
   };
 }
 
+function providerFor(target: Target): Provider {
+  switch (target.kind) {
+    case 'gitlab':
+      return mrProvider(target.url);
+    case 'github':
+      return githubProvider(target.url);
+    case 'local':
+      return localProvider(
+        resolve(expandHome(target.repoPath)),
+        target.base ?? '',
+        target.head ?? '',
+        target.range ?? '',
+      );
+    default:
+      throw new Error(`Unknown target kind: ${(target as { kind?: string }).kind}`);
+  }
+}
+
+function bootTarget(): Target | null {
+  if (process.env.MR_URL) return { kind: 'gitlab', url: process.env.MR_URL };
+  if (process.env.GITHUB_URL) return { kind: 'github', url: process.env.GITHUB_URL };
+  if (process.env.REPO_PATH) {
+    return {
+      kind: 'local',
+      repoPath: process.env.REPO_PATH,
+      base: process.env.GIT_BASE || undefined,
+      head: process.env.GIT_HEAD || undefined,
+      range: process.env.GIT_RANGE || undefined,
+    };
+  }
+  return null;
+}
+
 function readBody(req: Connect.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -104,20 +146,28 @@ function readBody(req: Connect.IncomingMessage): Promise<string> {
 }
 
 function apiPlugin(): Plugin {
-  const provider: Provider | null = process.env.MR_URL
-    ? mrProvider(process.env.MR_URL)
-    : process.env.GITHUB_URL
-      ? githubProvider(process.env.GITHUB_URL)
-      : process.env.REPO_PATH
-        ? localProvider(
-            process.env.REPO_PATH,
-            process.env.GIT_BASE ?? '',
-            process.env.GIT_HEAD ?? '',
-            process.env.GIT_RANGE ?? '',
-          )
-        : null;
-  let mrCache: string | null = null;
-  const fileCache = new Map<string, Promise<string>>();
+  interface Entry {
+    provider: Provider;
+    data: string | null;
+    fileCache: Map<string, Promise<string>>;
+  }
+  const entries = new Map<string, Entry>();
+
+  const entryFor = (target: Target): Entry => {
+    const key = JSON.stringify(target);
+    let entry = entries.get(key);
+    if (!entry) {
+      entry = { provider: providerFor(target), data: null, fileCache: new Map() };
+      entries.set(key, entry);
+    }
+    return entry;
+  };
+
+  const targetFromQuery = (url: string): Target => {
+    const t = new URLSearchParams(url.slice(url.indexOf('?') + 1)).get('t');
+    if (!t) throw new Error('missing target');
+    return JSON.parse(t);
+  };
 
   return {
     name: 'codereview-api',
@@ -129,33 +179,63 @@ function apiPlugin(): Plugin {
           res.end(body);
         };
         try {
-          if (!provider) {
-            send(400, JSON.stringify({ error: 'No review target. Launch with: npm start -- <mr-url | repo-path>' }));
-            return;
-          }
-
-          if (req.url === '/mr' && req.method === 'GET') {
-            mrCache ??= JSON.stringify(await provider.load());
-            send(200, mrCache);
+          if (req.url === '/boot' && req.method === 'GET') {
+            send(200, JSON.stringify({ target: bootTarget() }));
+          } else if (req.url === '/history' && req.method === 'GET') {
+            send(200, JSON.stringify(await loadHistory()));
+          } else if (req.url === '/pick-directory' && req.method === 'POST') {
+            send(200, JSON.stringify({ path: await pickDirectory() }));
+          } else if (req.url === '/repo-info' && req.method === 'POST') {
+            const { repoPath } = JSON.parse(await readBody(req));
+            if (!repoPath) {
+              send(400, '{"error":"missing repoPath"}');
+              return;
+            }
+            send(200, JSON.stringify(await repoInfo(resolve(expandHome(repoPath)))));
+          } else if (req.url === '/mr' && req.method === 'POST') {
+            const { target } = JSON.parse(await readBody(req)) as { target: Target };
+            const entry = entryFor(target);
+            if (!entry.data) {
+              const loaded = await entry.provider.load();
+              entry.data = JSON.stringify(loaded);
+              const info = loaded.info;
+              // For local targets, store the resolved branches so reopening
+              // from history pins the same comparison.
+              const canonical: Target =
+                target.kind === 'local' && !target.range
+                  ? { kind: 'local', repoPath: target.repoPath, base: info.targetBranch, head: info.sourceBranch }
+                  : target;
+              await recordHistory({
+                target: canonical,
+                title: info.title,
+                subtitle: info.promptHeader.replace(/^[^ ]+ /, ''),
+                openedAt: Date.now(),
+              });
+            }
+            send(200, entry.data);
           } else if (req.url?.startsWith('/file?') && req.method === 'GET') {
-            const path = new URLSearchParams(req.url.slice('/file?'.length)).get('path');
+            const params = new URLSearchParams(req.url.slice('/file?'.length));
+            const path = params.get('path');
             if (!path) {
               send(400, '{"error":"missing path"}');
               return;
             }
-            if (!fileCache.has(path)) {
-              fileCache.set(path, provider.fileContent(path));
+            const entry = entryFor(targetFromQuery(req.url));
+            if (!entry.fileCache.has(path)) {
+              entry.fileCache.set(path, entry.provider.fileContent(path));
             }
             try {
-              send(200, JSON.stringify({ content: await fileCache.get(path) }));
+              send(200, JSON.stringify({ content: await entry.fileCache.get(path) }));
             } catch (e) {
-              fileCache.delete(path);
+              entry.fileCache.delete(path);
               throw e;
             }
-          } else if (req.url === '/state' && req.method === 'GET') {
-            send(200, await loadState(await provider.stateKey()));
-          } else if (req.url === '/state' && req.method === 'PUT') {
-            await saveState(await provider.stateKey(), await readBody(req));
+          } else if (req.url?.startsWith('/state?') && req.method === 'GET') {
+            const entry = entryFor(targetFromQuery(req.url));
+            send(200, await loadState(await entry.provider.stateKey()));
+          } else if (req.url?.startsWith('/state?') && req.method === 'PUT') {
+            const entry = entryFor(targetFromQuery(req.url));
+            await saveState(await entry.provider.stateKey(), await readBody(req));
             send(200, '{"ok":true}');
           } else {
             send(404, '{"error":"not found"}');
