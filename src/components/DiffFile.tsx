@@ -7,18 +7,6 @@ import type { DiffFile as DiffFileType, DiffLine, Hunk, ReviewComment, Side } fr
 import { CommentEditor, CommentThread } from './CommentEditor';
 import { fileAnchorId } from './FileTree';
 
-const fileLinesCache = new Map<string, Promise<string[]>>();
-
-function getFileLines(path: string): Promise<string[]> {
-  let cached = fileLinesCache.get(path);
-  if (!cached) {
-    cached = fetchFileLines(path);
-    cached.catch(() => fileLinesCache.delete(path));
-    fileLinesCache.set(path, cached);
-  }
-  return cached;
-}
-
 /** A diff line plus its token-line indices within its hunk's highlighted sides. */
 interface RL {
   line: DiffLine;
@@ -184,7 +172,7 @@ export const DiffFile = memo(function DiffFile({ file }: { file: DiffFileType })
 
   const onExpand = useCallback(
     (gapIdx: number, dir: 'up' | 'down' | 'all') => {
-      getFileLines(path).then((lines) => {
+      fetchFileLines(path).then((lines) => {
         setFileLineCount(lines.length);
         setHunks((prev) => expandGap(prev, gapIdx, dir, lines));
       }, () => {});
@@ -281,7 +269,7 @@ export const DiffFile = memo(function DiffFile({ file }: { file: DiffFileType })
   );
 
   return (
-    <section className="diff-file" id={fileAnchorId(file.newPath)} ref={ref}>
+    <section className="diff-file" id={fileAnchorId(file.newPath)} data-path={file.newPath} ref={ref}>
       <header className="diff-file-header" onClick={() => setCollapsed(!collapsed)}>
         <span className={`chevron ${collapsed ? '' : 'open'}`}>▸</span>
         <span className="diff-file-path">{title}</span>

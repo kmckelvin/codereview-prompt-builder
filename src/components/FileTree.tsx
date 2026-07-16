@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DiffFile, ReviewComment } from '../types';
 
 interface Props {
   files: DiffFile[];
   comments: ReviewComment[];
+  activeFile: string | null;
 }
 
 interface TreeDir {
@@ -56,12 +57,17 @@ export function fileAnchorId(path: string): string {
   return `file-${path.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 }
 
-function FileRow({ file, count }: { file: DiffFile; count: number }) {
+function FileRow({ file, count, active }: { file: DiffFile; count: number; active: boolean }) {
   const name = file.newPath.split('/').pop();
+  const ref = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    if (active) ref.current?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
   return (
     <li>
       <a
-        className="tree-file"
+        ref={ref}
+        className={`tree-file${active ? ' active' : ''}`}
         href={`#${fileAnchorId(file.newPath)}`}
         onClick={(e) => {
           e.preventDefault();
@@ -77,7 +83,7 @@ function FileRow({ file, count }: { file: DiffFile; count: number }) {
   );
 }
 
-function DirNode({ dir, counts }: { dir: TreeDir; counts: Map<string, number> }) {
+function DirNode({ dir, counts, activeFile }: { dir: TreeDir; counts: Map<string, number>; activeFile: string | null }) {
   const [open, setOpen] = useState(true);
   return (
     <li>
@@ -85,27 +91,27 @@ function DirNode({ dir, counts }: { dir: TreeDir; counts: Map<string, number> })
         <span className={`chevron ${open ? 'open' : ''}`}>▸</span>
         {dir.name}
       </button>
-      {open && <TreeLevel dir={dir} counts={counts} />}
+      {open && <TreeLevel dir={dir} counts={counts} activeFile={activeFile} />}
     </li>
   );
 }
 
-function TreeLevel({ dir, counts }: { dir: TreeDir; counts: Map<string, number> }) {
+function TreeLevel({ dir, counts, activeFile }: { dir: TreeDir; counts: Map<string, number>; activeFile: string | null }) {
   const sortedDirs = [...dir.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
   const sortedFiles = [...dir.files].sort((a, b) => a.newPath.localeCompare(b.newPath));
   return (
     <ul className="tree-level">
       {sortedDirs.map((d) => (
-        <DirNode key={d.path} dir={d} counts={counts} />
+        <DirNode key={d.path} dir={d} counts={counts} activeFile={activeFile} />
       ))}
       {sortedFiles.map((f) => (
-        <FileRow key={f.newPath} file={f} count={counts.get(f.newPath) ?? 0} />
+        <FileRow key={f.newPath} file={f} count={counts.get(f.newPath) ?? 0} active={f.newPath === activeFile} />
       ))}
     </ul>
   );
 }
 
-export function FileTree({ files, comments }: Props) {
+export function FileTree({ files, comments, activeFile }: Props) {
   const tree = useMemo(() => compact(buildTree(files)), [files]);
   const counts = useMemo(() => {
     const map = new Map<string, number>();
@@ -118,7 +124,7 @@ export function FileTree({ files, comments }: Props) {
       <div className="file-tree-header">
         {files.length} file{files.length === 1 ? '' : 's'} changed
       </div>
-      <TreeLevel dir={tree} counts={counts} />
+      <TreeLevel dir={tree} counts={counts} activeFile={activeFile} />
     </nav>
   );
 }

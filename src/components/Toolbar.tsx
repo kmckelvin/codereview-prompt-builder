@@ -10,9 +10,10 @@ interface Props {
   commentCount: number;
   onImport: () => void;
   onClear: () => void;
+  onBack: () => void;
 }
 
-export function Toolbar({ info, viewMode, onViewMode, commentCount, onImport, onClear }: Props) {
+export function Toolbar({ info, viewMode, onViewMode, commentCount, onImport, onClear, onBack }: Props) {
   const { comments } = useReview();
   const [copied, setCopied] = useState(false);
 
@@ -29,6 +30,9 @@ export function Toolbar({ info, viewMode, onViewMode, commentCount, onImport, on
 
   return (
     <header className="toolbar">
+      <button className="btn back-btn" onClick={onBack} title="Back to start screen">
+        ←
+      </button>
       <div className="toolbar-title">
         {info.webUrl ? (
           <a href={info.webUrl} target="_blank" rel="noreferrer" title="Open MR in GitLab">

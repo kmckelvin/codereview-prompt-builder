@@ -261,6 +261,16 @@ button {
 .tree-file:hover {
   background: var(--bg-inset);
 }
+.tree-file {
+  scroll-margin-block: 48px;
+}
+.tree-file.active {
+  background: var(--bg-inset);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.tree-file.active .tree-file-name {
+  font-weight: 600;
+}
 .tree-dir {
   color: var(--fg-muted);
   font-weight: 500;
@@ -327,16 +337,19 @@ button {
 .diff-viewer {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
-  scroll-padding-top: 16px;
+  /* No top padding: sticky file headers must pin flush to the top edge */
+  padding: 0 16px;
+}
+.diff-viewer > .diff-file:first-child {
+  margin-top: 16px;
 }
 
 .diff-file {
   border: 1px solid var(--border);
   border-radius: 8px;
   margin-bottom: 16px;
-  overflow: hidden;
-  scroll-margin-top: 16px;
+  /* clip (not hidden) so the sticky file header keeps working */
+  overflow: clip;
 }
 
 .diff-file-header {
@@ -348,8 +361,11 @@ button {
   border-bottom: 1px solid var(--border);
   cursor: pointer;
   position: sticky;
-  top: -16px;
+  top: 0;
   z-index: 2;
+}
+.diff-file-header .chevron {
+  font-size: 14px;
 }
 .diff-file-path {
   font-family: var(--mono);
@@ -601,6 +617,161 @@ button {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
+}
+
+/* ---- Start screen ---- */
+
+.start-screen {
+  min-height: 100%;
+  display: grid;
+  place-items: start center;
+  padding: 48px 24px;
+  overflow-y: auto;
+}
+
+.start-card {
+  width: min(620px, 100%);
+}
+.start-card h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+.start-hint {
+  margin: 0 0 20px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.start-section {
+  margin-bottom: 20px;
+}
+.start-section > label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin-bottom: 6px;
+}
+
+.start-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.start-row input {
+  flex: 1;
+  font: 13px/1.5 var(--mono);
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  min-width: 0;
+}
+.start-row input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+
+.start-row.branches {
+  margin-top: 10px;
+}
+.branch-field {
+  flex: 1;
+  min-width: 0;
+}
+.branch-field label {
+  display: block;
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin-bottom: 3px;
+}
+.branch-field input {
+  width: 100%;
+}
+.branch-arrow {
+  color: var(--fg-muted);
+  padding-bottom: 8px;
+}
+
+.start-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.start-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  margin: 20px 0;
+}
+.start-divider::before,
+.start-divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.recent-list li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  background: var(--bg);
+  text-align: left;
+}
+.recent-item:hover {
+  background: var(--bg-inset);
+}
+.recent-icon {
+  flex-shrink: 0;
+}
+.recent-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.recent-title {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recent-subtitle {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recent-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.back-btn {
+  flex-shrink: 0;
+  padding: 4px 10px;
 }
 
 /* ---- Import modal ---- */
