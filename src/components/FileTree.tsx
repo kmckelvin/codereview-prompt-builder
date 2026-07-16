@@ -96,9 +96,12 @@ function DirNode({ dir, counts, activeFile }: { dir: TreeDir; counts: Map<string
   );
 }
 
+// Files arrive pre-sorted in tree order (see fileOrder.ts), so Map insertion
+// order and array order are already correct — no re-sorting here, keeping the
+// tree and the diff pane in exactly the same order.
 function TreeLevel({ dir, counts, activeFile }: { dir: TreeDir; counts: Map<string, number>; activeFile: string | null }) {
-  const sortedDirs = [...dir.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
-  const sortedFiles = [...dir.files].sort((a, b) => a.newPath.localeCompare(b.newPath));
+  const sortedDirs = [...dir.dirs.values()];
+  const sortedFiles = dir.files;
   return (
     <ul className="tree-level">
       {sortedDirs.map((d) => (

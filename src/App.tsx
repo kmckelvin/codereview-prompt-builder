@@ -5,6 +5,7 @@ import { FileTree } from './components/FileTree';
 import { ImportDialog } from './components/ImportDialog';
 import { StartScreen } from './components/StartScreen';
 import { Toolbar } from './components/Toolbar';
+import { sortFilesTreeOrder } from './fileOrder';
 import { newCommentId } from './promptFormat';
 import type { Draft, ViewMode } from './store';
 import { ReviewProvider, type ReviewStore } from './store';
@@ -21,31 +22,61 @@ function useDarkMode(): boolean {
   return dark;
 }
 
+// The open review is deep-linked in the URL hash so refresh (and browser
+// back/forward) restore it.
+function targetFromHash(): Target | null {
+  const m = window.location.hash.match(/^#t=(.+)$/);
+  if (!m) return null;
+  try {
+    return JSON.parse(decodeURIComponent(m[1]));
+  } catch {
+    return null;
+  }
+}
+
+function hashForTarget(target: Target | null): string {
+  return target ? `#t=${encodeURIComponent(JSON.stringify(target))}` : '';
+}
+
 export function App() {
-  const [target, setTarget] = useState<Target | null>(null);
-  const [booted, setBooted] = useState(false);
+  const [target, setTarget] = useState<Target | null>(targetFromHash);
+  const [booted, setBooted] = useState(
+    () => targetFromHash() !== null || !!sessionStorage.getItem('skip-boot-target'),
+  );
+
+  const openTarget = useCallback((t: Target | null) => {
+    const hash = hashForTarget(t);
+    if (window.location.hash !== hash && !(hash === '' && window.location.hash === '#')) {
+      window.location.hash = hash;
+    }
+    setTarget(t);
+  }, []);
+
+  // Follow manual hash edits and browser back/forward
+  useEffect(() => {
+    const onHashChange = () => setTarget(targetFromHash());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   useEffect(() => {
-    // A CLI-supplied target boots straight into the review, but only until
-    // the user navigates back to the start screen.
-    if (sessionStorage.getItem('skip-boot-target')) {
-      setBooted(true);
-      return;
-    }
+    // A CLI-supplied target boots straight into the review — unless a deep
+    // link or an explicit return to the start screen takes precedence.
+    if (booted) return;
     fetchBoot().then(
       (b) => {
-        if (b.target) setTarget(b.target);
+        if (b.target) openTarget(b.target);
         setBooted(true);
       },
       () => setBooted(true),
     );
-  }, []);
+  }, [booted, openTarget]);
 
   if (!booted) {
     return <div className="fullscreen-message"><p className="loading">Loading…</p></div>;
   }
   if (!target) {
-    return <StartScreen onOpen={setTarget} />;
+    return <StartScreen onOpen={openTarget} />;
   }
   return (
     <ReviewView
@@ -53,7 +84,7 @@ export function App() {
       target={target}
       onBack={() => {
         sessionStorage.setItem('skip-boot-target', '1');
-        setTarget(null);
+        openTarget(null);
       }}
     />
   );
@@ -102,6 +133,8 @@ function ReviewView({ target, onBack }: { target: Target; onBack: () => void }) 
   const deleteComment = useCallback((id: string) => {
     setComments((prev) => prev.filter((c) => c.id !== id));
   }, []);
+
+  const files = useMemo(() => (mr ? sortFilesTreeOrder(mr.files) : []), [mr]);
 
   const store: ReviewStore = useMemo(
     () => ({
@@ -155,8 +188,8 @@ function ReviewView({ target, onBack }: { target: Target; onBack: () => void }) 
           onBack={onBack}
         />
         <div className="app-body">
-          <FileTree files={mr.files} comments={comments} activeFile={activeFile} />
-          <DiffViewer files={mr.files} onActiveFile={setActiveFile} />
+          <FileTree files={files} comments={comments} activeFile={activeFile} />
+          <DiffViewer files={files} onActiveFile={setActiveFile} />
         </div>
         {importOpen && (
           <ImportDialog
