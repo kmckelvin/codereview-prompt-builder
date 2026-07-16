@@ -46,7 +46,7 @@ export function parseImport(text: string): ReviewComment[] {
   const comments: ReviewComment[] = [];
   let current: ReviewComment | null = null;
   for (const line of trimmed.split('\n')) {
-    if (/^(MR|Repo):\s/.test(line) && !current) continue;
+    if (/^(MR|PR|Repo|Compare):\s/.test(line) && !current) continue;
     const m = line.match(ENTRY_RE);
     if (m) {
       current = {

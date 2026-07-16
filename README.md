@@ -1,14 +1,16 @@
 # codereview-commenter
 
-A local code-review tool for GitLab merge requests and local git branches.
-Fetches the diff (via the `glab` CLI or `git`), opens a browser UI with a file
-tree and a syntax-highlighted diff viewer, lets you attach comments to lines
+A local code-review tool for GitLab merge requests, GitHub pull requests /
+compare ranges, and local git branches. Fetches the diff (via the `glab` or
+`gh` CLI, or `git`), opens a browser UI with a file tree and a
+syntax-highlighted diff viewer, lets you attach comments to lines
 (GitHub-style click or drag on the line-number gutter), and builds an LLM
 prompt from your comments.
 
 ## Requirements
 
-- [`glab`](https://gitlab.com/gitlab-org/cli) authenticated (`glab auth login`) — for MR mode
+- [`glab`](https://gitlab.com/gitlab-org/cli) authenticated (`glab auth login`) — for GitLab MRs
+- [`gh`](https://cli.github.com) authenticated (`gh auth login`) — for GitHub PRs/compares
 - Node 20+
 
 ## Usage
@@ -18,6 +20,10 @@ npm install   # first time only
 
 # GitLab MR mode
 npm start -- https://gitlab.com/group/repo/-/merge_requests/123
+
+# GitHub PR or compare mode
+npm start -- https://github.com/owner/repo/pull/123
+npm start -- https://github.com/owner/repo/compare/main...my-branch
 
 # Local repo mode — explicit range (passed to git verbatim)
 npm start -- /path/to/repo master..my-branch
@@ -52,7 +58,8 @@ The browser opens automatically. Then:
   path/to/file.rb:99 (deleted) - comment on a removed line
   ```
 
-  In local repo mode the first line is `Repo: /path/to/repo (base...head)`.
+  The first line varies by mode: `MR: <url>`, `PR: <url>`, `Compare: <url>`,
+  or `Repo: /path/to/repo (base...head)`.
 
 - **Import** accepts a previously copied prompt (or the raw JSON state) and
   restores those comments.
@@ -66,10 +73,10 @@ an old prompt.
 ## How it works
 
 - `start.mjs` passes the review target to the Vite dev server via env vars
-  (`MR_URL`, or `REPO_PATH` + `GIT_BASE`/`GIT_HEAD`/`GIT_RANGE`).
+  (`MR_URL`, `GITHUB_URL`, or `REPO_PATH` + `GIT_BASE`/`GIT_HEAD`/`GIT_RANGE`).
 - A Vite plugin (`vite.config.ts`) picks a provider — `server/glab.ts` (glab
-  CLI) or `server/localGit.ts` (git CLI) — and serves `/api/mr` (metadata +
-  diffs parsed by `server/diff.ts`), `/api/file` (full file content for
-  context expansion), and `/api/state` (persistence).
+  CLI), `server/github.ts` (gh CLI), or `server/localGit.ts` (git CLI) — and
+  serves `/api/mr` (metadata + diffs parsed by `server/diff.ts`), `/api/file`
+  (full file content for context expansion), and `/api/state` (persistence).
 - The React frontend highlights hunks with Shiki (`github-light`/`github-dark`,
   following `prefers-color-scheme`) and renders unified or split views.

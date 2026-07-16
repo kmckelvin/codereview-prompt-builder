@@ -14,6 +14,8 @@ import { resolve } from 'node:path';
 const usage = () => {
   console.error('Usage:');
   console.error('  npm start -- https://gitlab.com/group/repo/-/merge_requests/123');
+  console.error('  npm start -- https://github.com/owner/repo/pull/123');
+  console.error('  npm start -- https://github.com/owner/repo/compare/main...feature');
   console.error('  npm start -- /path/to/repo [master..feature]');
   console.error('  npm start -- /path/to/repo --base master --head feature');
   process.exit(1);
@@ -36,8 +38,13 @@ const env = { ...process.env };
 const target = flags.repo ?? positional.shift();
 
 if (target && /^https?:\/\//.test(target)) {
-  if (!/\/-\/merge_requests\/\d+/.test(target)) usage();
-  env.MR_URL = target;
+  if (/\/-\/merge_requests\/\d+/.test(target)) {
+    env.MR_URL = target;
+  } else if (/\/pull\/\d+/.test(target) || /\/compare\//.test(target)) {
+    env.GITHUB_URL = target;
+  } else {
+    usage();
+  }
 } else if (target) {
   const repoPath = resolve(target);
   if (!existsSync(repoPath)) {

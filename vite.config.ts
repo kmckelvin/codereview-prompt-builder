@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import type { Connect, Plugin } from 'vite';
 import { defineConfig } from 'vite';
 import { parseUnifiedDiff } from './server/diff';
+import { fetchGitHubData, fetchGitHubFile, parseGitHubUrl } from './server/github';
 import { fetchMRDiffs, fetchMRInfo, fetchRawFile, parseMRUrl, type MRInfo, type RawDiff } from './server/glab';
 import { fetchLocalDiffs, fetchLocalFile, resolveLocalRef } from './server/localGit';
 import { loadState, saveState } from './server/persist';
@@ -40,6 +41,27 @@ function mrProvider(mrUrl: string): Provider {
     },
     async stateKey() {
       return `${ref.host}/${ref.projectPath}/${ref.iid}.json`;
+    },
+  };
+}
+
+function githubProvider(url: string): Provider {
+  const ref = parseGitHubUrl(url);
+  let headSha: string | null = null;
+  return {
+    async load() {
+      const { info, diffs } = await fetchGitHubData(ref);
+      headSha = info.headSha;
+      return { info, files: toFiles(diffs) };
+    },
+    async fileContent(path) {
+      if (!headSha) headSha = (await fetchGitHubData(ref)).info.headSha;
+      if (!headSha) throw new Error('No head SHA to fetch file contents from');
+      return fetchGitHubFile(ref, path, headSha);
+    },
+    async stateKey() {
+      const name = ref.kind === 'pr' ? `pr-${ref.number}` : `compare-${sanitize(ref.range)}`;
+      return `${ref.host}/${ref.owner}/${ref.repo}/${name}.json`;
     },
   };
 }
@@ -84,14 +106,16 @@ function readBody(req: Connect.IncomingMessage): Promise<string> {
 function apiPlugin(): Plugin {
   const provider: Provider | null = process.env.MR_URL
     ? mrProvider(process.env.MR_URL)
-    : process.env.REPO_PATH
-      ? localProvider(
-          process.env.REPO_PATH,
-          process.env.GIT_BASE ?? '',
-          process.env.GIT_HEAD ?? '',
-          process.env.GIT_RANGE ?? '',
-        )
-      : null;
+    : process.env.GITHUB_URL
+      ? githubProvider(process.env.GITHUB_URL)
+      : process.env.REPO_PATH
+        ? localProvider(
+            process.env.REPO_PATH,
+            process.env.GIT_BASE ?? '',
+            process.env.GIT_HEAD ?? '',
+            process.env.GIT_RANGE ?? '',
+          )
+        : null;
   let mrCache: string | null = null;
   const fileCache = new Map<string, Promise<string>>();
 
