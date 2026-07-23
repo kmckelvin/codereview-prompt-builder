@@ -11,8 +11,10 @@
   --danger: #d1242f;
   --add-bg: #dafbe1;
   --add-gutter-bg: #aceebb;
+  --add-emph-bg: #abf2bc;
   --del-bg: #ffebe9;
   --del-gutter-bg: #ffcecb;
+  --del-emph-bg: rgba(255, 129, 130, 0.4);
   --hunk-bg: #ddf4ff;
   --hunk-fg: #57606a;
   --select-bg: #fff8c5;
@@ -35,8 +37,10 @@
     --danger: #f85149;
     --add-bg: rgba(46, 160, 67, 0.15);
     --add-gutter-bg: rgba(63, 185, 80, 0.3);
+    --add-emph-bg: rgba(46, 160, 67, 0.4);
     --del-bg: rgba(248, 81, 73, 0.12);
     --del-gutter-bg: rgba(248, 81, 73, 0.3);
+    --del-emph-bg: rgba(248, 81, 73, 0.4);
     --hunk-bg: rgba(56, 139, 253, 0.12);
     --hunk-fg: #9198a1;
     --select-bg: rgba(187, 128, 9, 0.18);
@@ -510,6 +514,16 @@ button {
 }
 .diff-row-split .code.kind-empty {
   background: var(--bg-inset);
+}
+
+/* Word-level emphasis: the exact text that changed within a modified line pair */
+.kind-add .code-emph {
+  background: var(--add-emph-bg);
+  border-radius: 2px;
+}
+.kind-del .code-emph {
+  background: var(--del-emph-bg);
+  border-radius: 2px;
 }
 
 .gutter.selected,

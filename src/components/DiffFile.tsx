@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchFileLines } from '../api';
 import { EXPAND_CHUNK, expandGap, gapAbove } from '../expand';
 import { highlightHunks, langForPath, type HighlightedHunk } from '../highlight';
+import { intraLineDiff, type CharRange } from '../intraDiff';
 import { lineInSelection, useReview } from '../store';
 import type { DiffFile as DiffFileType, DiffLine, Hunk, ReviewComment, Side } from '../types';
 import { CommentEditor, CommentThread } from './CommentEditor';
@@ -13,6 +14,8 @@ interface RL {
   hunkIdx: number;
   oldTok: number | null;
   newTok: number | null;
+  /** Changed-char ranges within this line's own side (word-level diff vs its paired line). */
+  emph: CharRange[] | null;
 }
 
 type UnifiedRow = { type: 'header'; hunkIdx: number } | { type: 'line'; rl: RL };
@@ -22,12 +25,36 @@ function buildRLs(hunks: Hunk[]): RL[][] {
   return hunks.map((hunk, hunkIdx) => {
     let oldTok = 0;
     let newTok = 0;
-    return hunk.lines.map((line) => ({
+    const rls: RL[] = hunk.lines.map((line) => ({
       line,
       hunkIdx,
       oldTok: line.kind !== 'add' ? oldTok++ : null,
       newTok: line.kind !== 'del' ? newTok++ : null,
+      emph: null,
     }));
+    // Pair del/add runs the same way the split view zips them, and emphasize
+    // the exact text that changed within each pair.
+    let dels: RL[] = [];
+    let adds: RL[] = [];
+    const flush = () => {
+      const n = Math.min(dels.length, adds.length);
+      for (let i = 0; i < n; i++) {
+        const d = intraLineDiff(dels[i].line.text, adds[i].line.text);
+        if (d) {
+          dels[i].emph = d.old;
+          adds[i].emph = d.new;
+        }
+      }
+      dels = [];
+      adds = [];
+    };
+    for (const rl of rls) {
+      if (rl.line.kind === 'del') dels.push(rl);
+      else if (rl.line.kind === 'add') adds.push(rl);
+      else flush();
+    }
+    flush();
+    return rls;
   });
 }
 
@@ -110,17 +137,61 @@ function GapControls({
   );
 }
 
-function CodeText({ text, tokens }: { text: string; tokens: { content: string; color?: string }[] | null }) {
-  if (!tokens) return <>{text}</>;
-  return (
-    <>
-      {tokens.map((t, i) => (
-        <span key={i} style={{ color: t.color }}>
-          {t.content}
-        </span>
-      ))}
-    </>
-  );
+/** Split `content` (starting at char offset `offset` in the line) at the boundaries of `ranges`. */
+function splitByRanges(content: string, offset: number, ranges: CharRange[]): { text: string; emph: boolean }[] {
+  const segs: { text: string; emph: boolean }[] = [];
+  let i = 0;
+  while (i < content.length) {
+    const abs = offset + i;
+    const inside = ranges.find(([s, e]) => abs >= s && abs < e);
+    let end: number;
+    if (inside) {
+      end = Math.min(content.length, inside[1] - offset);
+    } else {
+      const next = Math.min(...ranges.map(([s]) => s).filter((s) => s > abs));
+      end = Math.min(content.length, next - offset);
+    }
+    segs.push({ text: content.slice(i, end), emph: !!inside });
+    i = end;
+  }
+  return segs;
+}
+
+function CodeText({
+  text,
+  tokens,
+  emph,
+}: {
+  text: string;
+  tokens: { content: string; color?: string }[] | null;
+  emph: CharRange[] | null;
+}) {
+  const toks = tokens ?? [{ content: text, color: undefined }];
+  if (!emph || emph.length === 0) {
+    if (!tokens) return <>{text}</>;
+    return (
+      <>
+        {tokens.map((t, i) => (
+          <span key={i} style={{ color: t.color }}>
+            {t.content}
+          </span>
+        ))}
+      </>
+    );
+  }
+  let pos = 0;
+  const parts: React.ReactNode[] = [];
+  toks.forEach((t, i) => {
+    splitByRanges(t.content, pos, emph).forEach((seg, j) => {
+      parts.push(
+        <span key={`${i}.${j}`} className={seg.emph ? 'code-emph' : undefined} style={{ color: t.color }}>
+          {seg.text}
+        </span>,
+      );
+    });
+    pos += t.content.length;
+  });
+  return <>{parts}</>;
 }
 
 /** Comments anchored under the row that shows `side` line number `endLine`. */
@@ -311,7 +382,7 @@ export const DiffFile = memo(function DiffFile({ file }: { file: DiffFileType })
                   </span>
                   <span className="marker">{line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : ''}</span>
                   <code className="code">
-                    <CodeText text={line.text} tokens={tokensFor(row.rl, side)} />
+                    <CodeText text={line.text} tokens={tokensFor(row.rl, side)} emph={row.rl.emph} />
                   </code>
                 </div>
                 {renderAttachments(line, 'unified-span')}
@@ -344,13 +415,13 @@ export const DiffFile = memo(function DiffFile({ file }: { file: DiffFileType })
                     {left?.line.oldLine ?? ''}
                   </span>
                   <code className={`code half kind-${left ? (isContext ? 'context' : 'del') : 'empty'}${leftSel}`}>
-                    {left && <CodeText text={left.line.text} tokens={tokensFor(left, 'old')} />}
+                    {left && <CodeText text={left.line.text} tokens={tokensFor(left, 'old')} emph={left.emph} />}
                   </code>
                   <span className={`gutter${rightSel}`} {...(right ? gutterProps('new', rightNo) : {})}>
                     {right?.line.newLine ?? ''}
                   </span>
                   <code className={`code half kind-${right ? (isContext ? 'context' : 'add') : 'empty'}${rightSel}`}>
-                    {right && <CodeText text={right.line.text} tokens={tokensFor(right, 'new')} />}
+                    {right && <CodeText text={right.line.text} tokens={tokensFor(right, 'new')} emph={right.emph} />}
                   </code>
                 </div>
                 {left && renderAttachments(left.line, 'split-span')}
