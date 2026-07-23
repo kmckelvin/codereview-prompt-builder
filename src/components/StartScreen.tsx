@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { fetchHistory, fetchRepoInfo, pickDirectory } from '../api';
-import type { HistoryEntry, RepoInfo, Target } from '../types';
+import { fetchHistory, fetchRepoInfo, fetchWorkspaceInfo, pickDirectory } from '../api';
+import type { HistoryEntry, RepoInfo, Target, WorkspaceInfo } from '../types';
 
 function timeAgo(ts: number): string {
   const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
@@ -17,7 +17,40 @@ const TARGET_ICON: Record<Target['kind'], string> = {
   gitlab: '🦊',
   github: '🐙',
   local: '📁',
+  workspace: '🗂️',
 };
+
+function WorkspacePanel({ workspace, onOpen }: { workspace: WorkspaceInfo; onOpen: (t: Target) => void }) {
+  const changed = workspace.repos.filter((r) => r.changedFiles > 0);
+  return (
+    <div className="workspace-panel">
+      <p className="start-hint">
+        Not a git repo itself — found {workspace.repos.length} repo{workspace.repos.length === 1 ? '' : 's'} inside.
+        Each is compared against its default branch, including uncommitted changes.
+      </p>
+      <ul className="workspace-list">
+        {workspace.repos.map((r) => (
+          <li key={r.name} className={`workspace-repo${r.changedFiles === 0 ? ' unchanged' : ''}`}>
+            <span className="workspace-repo-name">{r.name}</span>
+            <span className="workspace-repo-branch">{r.branch}</span>
+            <span className="workspace-repo-count">
+              {r.changedFiles === 0 ? 'no changes' : `${r.changedFiles} file${r.changedFiles === 1 ? '' : 's'}`}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <button
+        className="btn btn-primary"
+        disabled={changed.length === 0}
+        onClick={() => onOpen({ kind: 'workspace', rootPath: workspace.rootPath })}
+      >
+        {changed.length === 0
+          ? 'No changes to review'
+          : `Open workspace (${changed.length} repo${changed.length === 1 ? '' : 's'} with changes)`}
+      </button>
+    </div>
+  );
+}
 
 export function StartScreen({ onOpen }: { onOpen: (t: Target) => void }) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -42,6 +75,7 @@ export function StartScreen({ onOpen }: { onOpen: (t: Target) => void }) {
   // Local repo form
   const [repoPath, setRepoPath] = useState('');
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null);
   const [repoError, setRepoError] = useState<string | null>(null);
   const [loadingRepo, setLoadingRepo] = useState(false);
   const [base, setBase] = useState('');
@@ -51,6 +85,7 @@ export function StartScreen({ onOpen }: { onOpen: (t: Target) => void }) {
     if (!path.trim() || loadingRepo) return;
     setLoadingRepo(true);
     setRepoError(null);
+    setWorkspace(null);
     try {
       const info = await fetchRepoInfo(path.trim());
       setRepoInfo(info);
@@ -59,6 +94,17 @@ export function StartScreen({ onOpen }: { onOpen: (t: Target) => void }) {
       setHead(info.currentBranch);
     } catch (e) {
       setRepoInfo(null);
+      // Not a repo itself — maybe a workspace directory containing repos.
+      try {
+        const ws = await fetchWorkspaceInfo(path.trim());
+        if (ws.repos.length > 0) {
+          setWorkspace(ws);
+          setRepoPath(ws.rootPath);
+          return;
+        }
+      } catch {
+        // fall through to the original error
+      }
       setRepoError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoadingRepo(false);
@@ -123,6 +169,7 @@ export function StartScreen({ onOpen }: { onOpen: (t: Target) => void }) {
               onChange={(e) => {
                 setRepoPath(e.target.value);
                 setRepoInfo(null);
+                setWorkspace(null);
                 setRepoError(null);
               }}
               onKeyDown={(e) => e.key === 'Enter' && lookupRepo()}
@@ -131,7 +178,7 @@ export function StartScreen({ onOpen }: { onOpen: (t: Target) => void }) {
             <button className="btn" onClick={browse} title="Pick a directory">
               Browse…
             </button>
-            {!repoInfo && (
+            {!repoInfo && !workspace && (
               <button className="btn" onClick={() => lookupRepo()} disabled={!repoPath.trim() || loadingRepo}>
                 {loadingRepo ? 'Loading…' : 'Load'}
               </button>
@@ -176,6 +223,7 @@ export function StartScreen({ onOpen }: { onOpen: (t: Target) => void }) {
               <p className="start-hint">Compared via merge-base, like an MR: changes on head since it diverged from base.</p>
             </>
           )}
+          {workspace && <WorkspacePanel workspace={workspace} onOpen={onOpen} />}
         </section>
 
         {history.length > 0 && (

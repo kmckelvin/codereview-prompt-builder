@@ -10,11 +10,13 @@ import { fetchMRDiffs, fetchMRInfo, fetchRawFile, parseMRUrl, type MRInfo, type 
 import { loadHistory, recordHistory } from './server/history';
 import { fetchLocalDiffs, fetchLocalFile, repoInfo, resolveLocalRef } from './server/localGit';
 import { loadState, saveState } from './server/persist';
+import { fetchWorkspaceDiffs, fetchWorkspaceFile, workspaceInfo } from './server/workspace';
 
 export type Target =
   | { kind: 'gitlab'; url: string }
   | { kind: 'github'; url: string }
-  | { kind: 'local'; repoPath: string; base?: string; head?: string; range?: string };
+  | { kind: 'local'; repoPath: string; base?: string; head?: string; range?: string }
+  | { kind: 'workspace'; rootPath: string };
 
 interface Provider {
   load(): Promise<{ info: MRInfo; files: unknown[] }>;
@@ -103,6 +105,32 @@ function localProvider(repoPath: string, base: string, head: string, range: stri
   };
 }
 
+function workspaceProvider(rootPath: string): Provider {
+  return {
+    async load() {
+      const { repos, diffs } = await fetchWorkspaceDiffs(rootPath);
+      const changed = repos.filter((r) => r.changedFiles > 0);
+      const info: MRInfo = {
+        title: `${basename(rootPath)}: workspace`,
+        author: '',
+        webUrl: null,
+        sourceBranch: 'working trees',
+        targetBranch: 'default branches',
+        state: '',
+        headSha: null,
+        promptHeader: `Workspace: ${rootPath} (${changed.length} repo${changed.length === 1 ? '' : 's'} with changes; paths are repo/file; each repo's working tree diffed against its default branch)`,
+      };
+      return { info, files: toFiles(diffs) };
+    },
+    async fileContent(path) {
+      return fetchWorkspaceFile(rootPath, path);
+    },
+    async stateKey() {
+      return `workspace${rootPath}/review.json`;
+    },
+  };
+}
+
 function providerFor(target: Target): Provider {
   switch (target.kind) {
     case 'gitlab':
@@ -116,6 +144,8 @@ function providerFor(target: Target): Provider {
         target.head ?? '',
         target.range ?? '',
       );
+    case 'workspace':
+      return workspaceProvider(resolve(expandHome(target.rootPath)));
     default:
       throw new Error(`Unknown target kind: ${(target as { kind?: string }).kind}`);
   }
@@ -124,6 +154,7 @@ function providerFor(target: Target): Provider {
 function bootTarget(): Target | null {
   if (process.env.MR_URL) return { kind: 'gitlab', url: process.env.MR_URL };
   if (process.env.GITHUB_URL) return { kind: 'github', url: process.env.GITHUB_URL };
+  if (process.env.WORKSPACE_PATH) return { kind: 'workspace', rootPath: process.env.WORKSPACE_PATH };
   if (process.env.REPO_PATH) {
     return {
       kind: 'local',
@@ -189,6 +220,13 @@ function apiPlugin(): Plugin {
               return;
             }
             send(200, JSON.stringify(await repoInfo(resolve(expandHome(repoPath)))));
+          } else if (req.url === '/workspace-info' && req.method === 'POST') {
+            const { rootPath } = JSON.parse(await readBody(req));
+            if (!rootPath) {
+              send(400, '{"error":"missing rootPath"}');
+              return;
+            }
+            send(200, JSON.stringify(await workspaceInfo(resolve(expandHome(rootPath)))));
           } else if (req.url === '/mr' && req.method === 'POST') {
             const { target } = JSON.parse(await readBody(req)) as { target: Target };
             // Always load fresh (with a fresh provider, so the head SHA and

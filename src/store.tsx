@@ -29,6 +29,8 @@ export interface ReviewStore {
 
   viewMode: ViewMode;
   dark: boolean;
+  /** Header line for exported prompts (MR link / repo / workspace description). */
+  promptHeader: string;
 }
 
 const ReviewContext = createContext<ReviewStore | null>(null);

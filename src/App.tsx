@@ -150,8 +150,9 @@ function ReviewView({ target, onBack }: { target: Target; onBack: () => void }) 
       setDraft,
       viewMode,
       dark,
+      promptHeader: mr?.info.promptHeader ?? '',
     }),
-    [comments, addComment, updateComment, deleteComment, selection, dragging, draft, viewMode, dark],
+    [comments, addComment, updateComment, deleteComment, selection, dragging, draft, viewMode, dark, mr],
   );
 
   if (error) {
@@ -188,7 +189,12 @@ function ReviewView({ target, onBack }: { target: Target; onBack: () => void }) 
           onBack={onBack}
         />
         <div className="app-body">
-          <FileTree files={files} comments={comments} activeFile={activeFile} />
+          <FileTree
+            files={files}
+            comments={comments}
+            activeFile={activeFile}
+            collapseRoots={target.kind === 'workspace'}
+          />
           <DiffViewer files={files} onActiveFile={setActiveFile} />
         </div>
         {importOpen && (

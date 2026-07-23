@@ -44,7 +44,8 @@ export interface MRData {
 export type Target =
   | { kind: 'gitlab'; url: string }
   | { kind: 'github'; url: string }
-  | { kind: 'local'; repoPath: string; base?: string; head?: string; range?: string };
+  | { kind: 'local'; repoPath: string; base?: string; head?: string; range?: string }
+  | { kind: 'workspace'; rootPath: string };
 
 export interface HistoryEntry {
   target: Target;
@@ -58,6 +59,18 @@ export interface RepoInfo {
   branches: string[];
   currentBranch: string;
   defaultBranch: string;
+}
+
+export interface WorkspaceRepo {
+  name: string;
+  branch: string;
+  baseRef: string;
+  changedFiles: number;
+}
+
+export interface WorkspaceInfo {
+  rootPath: string;
+  repos: WorkspaceRepo[];
 }
 
 export type Side = 'old' | 'new';

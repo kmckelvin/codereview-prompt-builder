@@ -1,4 +1,4 @@
-import type { HistoryEntry, MRData, RepoInfo, ReviewComment, Target } from './types';
+import type { HistoryEntry, MRData, RepoInfo, ReviewComment, Target, WorkspaceInfo } from './types';
 
 async function json<T>(res: Response): Promise<T> {
   const body = await res.json();
@@ -41,6 +41,15 @@ export function fetchRepoInfo(repoPath: string): Promise<RepoInfo> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ repoPath }),
   }).then((r) => json<RepoInfo>(r));
+}
+
+/** Child-repo change summary for a directory that contains git repos. */
+export function fetchWorkspaceInfo(rootPath: string): Promise<WorkspaceInfo> {
+  return fetch('/api/workspace-info', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rootPath }),
+  }).then((r) => json<WorkspaceInfo>(r));
 }
 
 export function fetchMR(): Promise<MRData> {

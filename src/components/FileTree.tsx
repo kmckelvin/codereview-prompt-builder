@@ -5,6 +5,8 @@ interface Props {
   files: DiffFile[];
   comments: ReviewComment[];
   activeFile: string | null;
+  /** Start top-level directories collapsed (workspace mode: one root per repo). */
+  collapseRoots?: boolean;
 }
 
 interface TreeDir {
@@ -83,8 +85,15 @@ function FileRow({ file, count, active }: { file: DiffFile; count: number; activ
   );
 }
 
-function DirNode({ dir, counts, activeFile }: { dir: TreeDir; counts: Map<string, number>; activeFile: string | null }) {
-  const [open, setOpen] = useState(true);
+interface LevelProps {
+  counts: Map<string, number>;
+  activeFile: string | null;
+  /** Whether this level's directory nodes start open; nested levels always do. */
+  dirsDefaultOpen?: boolean;
+}
+
+function DirNode({ dir, counts, activeFile, defaultOpen }: LevelProps & { dir: TreeDir; defaultOpen: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <li>
       <button className="tree-dir" onClick={() => setOpen(!open)}>
@@ -99,13 +108,13 @@ function DirNode({ dir, counts, activeFile }: { dir: TreeDir; counts: Map<string
 // Files arrive pre-sorted in tree order (see fileOrder.ts), so Map insertion
 // order and array order are already correct — no re-sorting here, keeping the
 // tree and the diff pane in exactly the same order.
-function TreeLevel({ dir, counts, activeFile }: { dir: TreeDir; counts: Map<string, number>; activeFile: string | null }) {
+function TreeLevel({ dir, counts, activeFile, dirsDefaultOpen = true }: LevelProps & { dir: TreeDir }) {
   const sortedDirs = [...dir.dirs.values()];
   const sortedFiles = dir.files;
   return (
     <ul className="tree-level">
       {sortedDirs.map((d) => (
-        <DirNode key={d.path} dir={d} counts={counts} activeFile={activeFile} />
+        <DirNode key={d.path} dir={d} counts={counts} activeFile={activeFile} defaultOpen={dirsDefaultOpen} />
       ))}
       {sortedFiles.map((f) => (
         <FileRow key={f.newPath} file={f} count={counts.get(f.newPath) ?? 0} active={f.newPath === activeFile} />
@@ -114,7 +123,7 @@ function TreeLevel({ dir, counts, activeFile }: { dir: TreeDir; counts: Map<stri
   );
 }
 
-export function FileTree({ files, comments, activeFile }: Props) {
+export function FileTree({ files, comments, activeFile, collapseRoots = false }: Props) {
   const tree = useMemo(() => compact(buildTree(files)), [files]);
   const counts = useMemo(() => {
     const map = new Map<string, number>();
@@ -127,7 +136,7 @@ export function FileTree({ files, comments, activeFile }: Props) {
       <div className="file-tree-header">
         {files.length} file{files.length === 1 ? '' : 's'} changed
       </div>
-      <TreeLevel dir={tree} counts={counts} activeFile={activeFile} />
+      <TreeLevel dir={tree} counts={counts} activeFile={activeFile} dirsDefaultOpen={!collapseRoots} />
     </nav>
   );
 }

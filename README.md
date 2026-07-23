@@ -37,12 +37,27 @@ npm start -- /path/to/repo --base master --head my-branch
 # Local repo mode — defaults: --head is the currently checked-out branch,
 # --base is the repo default branch (origin/HEAD, else main/master)
 npm start -- /path/to/repo
+
+# Workspace mode — a folder that isn't a repo itself but contains git repos
+# as direct children. Every repo with changes (working tree or branch work
+# relative to its default branch, untracked files included) appears in one
+# review, with repos as top-level folders in the file tree.
+npm start -- /path/to/workspace
+```
+
+An optional `.codereview.json` in the workspace root configures the scan;
+currently one option — repos to leave out entirely:
+
+```json
+{ "skip": ["some-repo", "another-repo"] }
 ```
 
 The browser opens automatically. With no arguments you land on a start screen
 where you can paste a URL, point at a local repo (typed path or native folder
 picker, with branch pickers), or reopen one of the last 15 reviews; the `←`
-button in the review toolbar takes you back to it. Then:
+button in the review toolbar takes you back to it. Pointing at a folder that
+isn't a repo lists the git repos inside it with per-repo change counts and
+offers to open them as one workspace review. Then:
 
 - **File tree** highlights the file currently at the top of the viewport and
   scrolls to keep it visible; file headers stay pinned while their diff is on

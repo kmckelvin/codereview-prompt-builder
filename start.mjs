@@ -9,7 +9,7 @@
 // (base...head, like an MR); an explicit range is passed to git verbatim.
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const usage = () => {
   console.error('Usage:');
@@ -19,6 +19,7 @@ const usage = () => {
   console.error('  npm start -- https://github.com/owner/repo/compare/main...feature');
   console.error('  npm start -- /path/to/repo [master..feature]');
   console.error('  npm start -- /path/to/repo --base master --head feature');
+  console.error('  npm start -- /path/to/workspace   # non-repo folder whose children are git repos');
   process.exit(1);
 };
 
@@ -54,14 +55,19 @@ if (!target) {
     console.error(`No such directory: ${repoPath}`);
     process.exit(1);
   }
-  env.REPO_PATH = repoPath;
-  const range = positional.shift();
-  if (range) {
-    if (!/\.{2,3}/.test(range)) usage();
-    env.GIT_RANGE = range;
+  if (!existsSync(join(repoPath, '.git'))) {
+    // Not a repo itself: treat it as a workspace of child repos.
+    env.WORKSPACE_PATH = repoPath;
+  } else {
+    env.REPO_PATH = repoPath;
+    const range = positional.shift();
+    if (range) {
+      if (!/\.{2,3}/.test(range)) usage();
+      env.GIT_RANGE = range;
+    }
+    if (flags.base) env.GIT_BASE = flags.base;
+    if (flags.head) env.GIT_HEAD = flags.head;
   }
-  if (flags.base) env.GIT_BASE = flags.base;
-  if (flags.head) env.GIT_HEAD = flags.head;
 }
 
 const child = spawn('npx', ['vite', '--open'], { stdio: 'inherit', env });

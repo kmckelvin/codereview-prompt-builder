@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { buildPrompt } from '../promptFormat';
 import { useReview } from '../store';
 import type { ReviewComment } from '../types';
 
@@ -9,8 +10,9 @@ function rangeLabel(startLine: number, endLine: number, side: 'old' | 'new'): st
 
 /** Inline editor for the current draft (new comment or edit-in-place). */
 export function CommentEditor() {
-  const { draft, setDraft, setSelection, addComment, updateComment } = useReview();
+  const { draft, setDraft, setSelection, addComment, updateComment, promptHeader } = useReview();
   const [body, setBody] = useState(draft?.initialBody ?? '');
+  const [copied, setCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -20,6 +22,12 @@ export function CommentEditor() {
       ta.setSelectionRange(ta.value.length, ta.value.length);
     }
   }, []);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = window.setTimeout(() => setCopied(false), 1600);
+    return () => window.clearTimeout(t);
+  }, [copied]);
 
   if (!draft) return null;
 
@@ -43,6 +51,21 @@ export function CommentEditor() {
       });
     }
     cancel();
+  };
+
+  /** Copy this one comment as a standalone prompt, without saving it. */
+  const copyPrompt = () => {
+    const trimmed = body.trim();
+    if (!trimmed) return;
+    const single: ReviewComment = {
+      id: '',
+      file: draft.file,
+      side: draft.side,
+      startLine: draft.startLine,
+      endLine: draft.endLine,
+      body: trimmed,
+    };
+    navigator.clipboard.writeText(buildPrompt(promptHeader, [single])).then(() => setCopied(true), () => {});
   };
 
   return (
@@ -71,6 +94,9 @@ export function CommentEditor() {
       <div className="comment-editor-actions">
         <button className="btn" onClick={cancel}>
           Cancel
+        </button>
+        <button className="btn" onClick={copyPrompt} disabled={!body.trim()}>
+          {copied ? 'Copied!' : 'Copy prompt'}
         </button>
         <button className="btn btn-primary" onClick={save} disabled={!body.trim()}>
           {draft.editingId ? 'Save' : 'Add comment'}

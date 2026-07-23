@@ -9,7 +9,7 @@ export interface LocalRef {
   range: string | null;
 }
 
-function git(repoPath: string, args: string[]): Promise<string> {
+export function git(repoPath: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile('git', args, { cwd: repoPath, maxBuffer: 256 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) reject(new Error(`git ${args.join(' ')} failed: ${stderr || err.message}`));
@@ -18,7 +18,7 @@ function git(repoPath: string, args: string[]): Promise<string> {
   });
 }
 
-async function defaultBranch(repoPath: string): Promise<string> {
+export async function defaultBranch(repoPath: string): Promise<string> {
   try {
     const ref = (await git(repoPath, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])).trim();
     if (ref) return ref; // e.g. "origin/main"
@@ -111,11 +111,9 @@ function parseFileHeader(headerLines: string[]): Omit<RawDiff, 'diff'> {
   };
 }
 
-export async function fetchLocalDiffs(ref: LocalRef): Promise<RawDiff[]> {
-  const range = ref.range ?? `${ref.base}...${ref.head}`;
-  const out = await git(ref.repoPath, ['diff', '--no-color', '--find-renames', range]);
+/** Split raw `git diff` output into per-file blocks on "diff --git" boundaries. */
+export function parseGitDiffOutput(out: string): RawDiff[] {
   const files: RawDiff[] = [];
-  // Split into per-file blocks on "diff --git" boundaries
   for (const block of out.split(/^(?=diff --git )/m)) {
     if (!block.startsWith('diff --git ')) continue;
     const lines = block.split('\n');
@@ -125,6 +123,11 @@ export async function fetchLocalDiffs(ref: LocalRef): Promise<RawDiff[]> {
     files.push({ ...parseFileHeader(headerLines), diff });
   }
   return files;
+}
+
+export async function fetchLocalDiffs(ref: LocalRef): Promise<RawDiff[]> {
+  const range = ref.range ?? `${ref.base}...${ref.head}`;
+  return parseGitDiffOutput(await git(ref.repoPath, ['diff', '--no-color', '--find-renames', range]));
 }
 
 export function fetchLocalFile(ref: LocalRef, path: string): Promise<string> {
