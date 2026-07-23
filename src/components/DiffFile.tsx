@@ -215,7 +215,24 @@ export const DiffFile = memo(function DiffFile({ file }: { file: DiffFileType })
   const [pathCopied, setPathCopied] = useState(false);
 
   const path = file.status === 'deleted' ? file.oldPath : file.newPath;
-  const lang = useMemo(() => langForPath(path), [path]);
+
+  // Extensionless files (bin/deploy, hooks, scripts) are identified by their
+  // shebang. Line 1 is usually right in the diff (always, for added/deleted
+  // files); when it isn't, probe the file's first line via the API.
+  const diffFirstLine = useMemo(() => {
+    const lines = hunks[0]?.lines ?? [];
+    return lines.find((l) => l.newLine === 1)?.text ?? lines.find((l) => l.oldLine === 1)?.text ?? null;
+  }, [hunks]);
+  const [probedFirstLine, setProbedFirstLine] = useState<string | null>(null);
+  const firstLine = diffFirstLine ?? probedFirstLine;
+  const lang = useMemo(() => langForPath(path, firstLine), [path, firstLine]);
+
+  useEffect(() => {
+    if (!visible || firstLine !== null || file.status === 'deleted') return;
+    const basename = path.split('/').pop() ?? '';
+    if (basename.includes('.') || langForPath(path) !== 'plaintext') return;
+    fetchFileLines(path).then((lines) => setProbedFirstLine(lines[0] ?? ''), () => setProbedFirstLine(''));
+  }, [visible, firstLine, file.status, path]);
 
   useEffect(() => {
     if (!visible || collapsed) return;

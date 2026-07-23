@@ -76,11 +76,57 @@ const BASENAME_TO_LANG: Record<string, string> = {
   'gemfile.lock': 'plaintext',
 };
 
-export function langForPath(path: string): string {
+const SHEBANG_TO_LANG: Record<string, string> = {
+  sh: 'shellscript',
+  bash: 'shellscript',
+  zsh: 'shellscript',
+  dash: 'shellscript',
+  ksh: 'shellscript',
+  ash: 'shellscript',
+  fish: 'fish',
+  node: 'javascript',
+  nodejs: 'javascript',
+  bun: 'javascript',
+  deno: 'typescript',
+  tsx: 'typescript',
+  'ts-node': 'typescript',
+  python: 'python',
+  ruby: 'ruby',
+  perl: 'perl',
+  php: 'php',
+  lua: 'lua',
+  rscript: 'r',
+  elixir: 'elixir',
+  escript: 'erlang',
+  groovy: 'groovy',
+  pwsh: 'powershell',
+  expect: 'tcl',
+  tclsh: 'tcl',
+};
+
+/** Language from a shebang line (`#!/bin/sh`, `#!/usr/bin/env -S node --flags`), or null. */
+export function langForShebang(firstLine: string): string | null {
+  const m = /^#!(.*)/.exec(firstLine);
+  if (!m) return null;
+  const tokens = m[1].trim().split(/\s+/);
+  let interp = tokens[0]?.split('/').pop() ?? '';
+  if (interp === 'env') {
+    interp = tokens.slice(1).find((t) => !t.startsWith('-'))?.split('/').pop() ?? '';
+  }
+  const name = interp.toLowerCase().replace(/\d+(\.\d+)*$/, '');
+  return SHEBANG_TO_LANG[name] ?? null;
+}
+
+export function langForPath(path: string, firstLine?: string | null): string {
   const basename = path.split('/').pop()?.toLowerCase() ?? '';
   if (BASENAME_TO_LANG[basename]) return BASENAME_TO_LANG[basename];
   const ext = basename.includes('.') ? basename.split('.').pop()! : '';
-  return EXT_TO_LANG[ext] ?? 'plaintext';
+  if (EXT_TO_LANG[ext]) return EXT_TO_LANG[ext];
+  if (firstLine) {
+    const shebangLang = langForShebang(firstLine);
+    if (shebangLang) return shebangLang;
+  }
+  return 'plaintext';
 }
 
 export const THEMES = { light: 'github-light', dark: 'github-dark' } as const;
