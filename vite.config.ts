@@ -148,20 +148,17 @@ function readBody(req: Connect.IncomingMessage): Promise<string> {
 function apiPlugin(): Plugin {
   interface Entry {
     provider: Provider;
-    data: string | null;
     fileCache: Map<string, Promise<string>>;
   }
   const entries = new Map<string, Entry>();
 
-  const entryFor = (target: Target): Entry => {
-    const key = JSON.stringify(target);
-    let entry = entries.get(key);
-    if (!entry) {
-      entry = { provider: providerFor(target), data: null, fileCache: new Map() };
-      entries.set(key, entry);
-    }
+  const freshEntry = (target: Target): Entry => {
+    const entry = { provider: providerFor(target), fileCache: new Map<string, Promise<string>>() };
+    entries.set(JSON.stringify(target), entry);
     return entry;
   };
+
+  const entryFor = (target: Target): Entry => entries.get(JSON.stringify(target)) ?? freshEntry(target);
 
   const targetFromQuery = (url: string): Target => {
     const t = new URLSearchParams(url.slice(url.indexOf('?') + 1)).get('t');
@@ -194,25 +191,25 @@ function apiPlugin(): Plugin {
             send(200, JSON.stringify(await repoInfo(resolve(expandHome(repoPath)))));
           } else if (req.url === '/mr' && req.method === 'POST') {
             const { target } = JSON.parse(await readBody(req)) as { target: Target };
-            const entry = entryFor(target);
-            if (!entry.data) {
-              const loaded = await entry.provider.load();
-              entry.data = JSON.stringify(loaded);
-              const info = loaded.info;
-              // For local targets, store the resolved branches so reopening
-              // from history pins the same comparison.
-              const canonical: Target =
-                target.kind === 'local' && !target.range
-                  ? { kind: 'local', repoPath: target.repoPath, base: info.targetBranch, head: info.sourceBranch }
-                  : target;
-              await recordHistory({
-                target: canonical,
-                title: info.title,
-                subtitle: info.promptHeader.replace(/^[^ ]+ /, ''),
-                openedAt: Date.now(),
-              });
-            }
-            send(200, entry.data);
+            // Always load fresh (with a fresh provider, so the head SHA and
+            // file contents refresh too) — a page reload should pick up
+            // commits pushed to the MR/PR/branch since the last view.
+            const entry = freshEntry(target);
+            const loaded = await entry.provider.load();
+            const info = loaded.info;
+            // For local targets, store the resolved branches so reopening
+            // from history pins the same comparison.
+            const canonical: Target =
+              target.kind === 'local' && !target.range
+                ? { kind: 'local', repoPath: target.repoPath, base: info.targetBranch, head: info.sourceBranch }
+                : target;
+            await recordHistory({
+              target: canonical,
+              title: info.title,
+              subtitle: info.promptHeader.replace(/^[^ ]+ /, ''),
+              openedAt: Date.now(),
+            });
+            send(200, JSON.stringify(loaded));
           } else if (req.url?.startsWith('/file?') && req.method === 'GET') {
             const params = new URLSearchParams(req.url.slice('/file?'.length));
             const path = params.get('path');
