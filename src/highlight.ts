@@ -1,5 +1,6 @@
-import type { HighlighterCore, ThemedToken } from 'shiki';
+import type { HighlighterCore, LanguageRegistration, ThemedToken } from 'shiki';
 import { bundledLanguages, createHighlighter } from 'shiki';
+import slimGrammar from './grammars/slim.tmLanguage.json';
 import type { Hunk } from './types';
 
 const EXT_TO_LANG: Record<string, string> = {
@@ -11,6 +12,7 @@ const EXT_TO_LANG: Record<string, string> = {
   cjs: 'javascript',
   rb: 'ruby',
   erb: 'erb',
+  slim: 'slim',
   py: 'python',
   go: 'go',
   rs: 'rust',
@@ -66,6 +68,29 @@ const EXT_TO_LANG: Record<string, string> = {
   conf: 'ini',
   makefile: 'make',
   mk: 'make',
+};
+
+const SLIM_EMBEDDED_LANGS = [
+  'ruby',
+  'javascript',
+  'coffee',
+  'markdown',
+  'css',
+  'sass',
+  'scss',
+  'less',
+  'erb',
+  'html',
+];
+
+const CUSTOM_LANGUAGES: Record<string, LanguageRegistration> = {
+  slim: {
+    // TypeScript infers incompatible optional capture keys from the JSON union.
+    ...(slimGrammar as unknown as LanguageRegistration),
+    name: 'slim',
+    displayName: 'Slim',
+    embeddedLangs: SLIM_EMBEDDED_LANGS,
+  },
 };
 
 const BASENAME_TO_LANG: Record<string, string> = {
@@ -144,9 +169,20 @@ function getHighlighter(): Promise<HighlighterCore> {
 
 export async function ensureLang(lang: string): Promise<string> {
   if (loadedLangs.has(lang)) return lang;
-  if (!(lang in bundledLanguages)) return 'plaintext';
+
+  const customLanguage = CUSTOM_LANGUAGES[lang];
+  if (!customLanguage && !(lang in bundledLanguages)) return 'plaintext';
+
   const highlighter = await getHighlighter();
-  await highlighter.loadLanguage(bundledLanguages[lang as keyof typeof bundledLanguages]);
+  if (customLanguage) {
+    for (const embeddedLang of customLanguage.embeddedLangs ?? []) {
+      await ensureLang(embeddedLang);
+    }
+    await highlighter.loadLanguage(customLanguage);
+  } else {
+    await highlighter.loadLanguage(bundledLanguages[lang as keyof typeof bundledLanguages]);
+  }
+
   loadedLangs.add(lang);
   return lang;
 }
